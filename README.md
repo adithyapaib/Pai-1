@@ -269,7 +269,7 @@ pai-1-api/
 └── requirements.txt
 ```
 
-\* `decision_head.pt` is git-ignored — supply it locally or via a private artifact store.
+\* `decision_head.pt` is tracked via Git LFS — clones get it automatically (requires `git lfs install`).
 
 ---
 
@@ -316,7 +316,7 @@ models/pai-1-0.5b/
     └── chat_template.jinja
 ```
 
-`decision_head.pt` is intentionally ignored by Git. The Qwen backbone downloads from Hugging Face on first startup and is cached.
+`decision_head.pt` is versioned with Git LFS, so a normal clone includes it (run `git lfs install` first if you don't have LFS). The Qwen backbone downloads from Hugging Face on first startup and is cached.
 
 ---
 

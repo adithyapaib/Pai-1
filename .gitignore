@@ -8,3 +8,5 @@ models/*.safetensors
 *.pth
 .cache/
 .pytest_cache/
+# Model weights live in Git LFS — keep this one tracked.
+!models/pai-1-0.5b/decision_head.pt
