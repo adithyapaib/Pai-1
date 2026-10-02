@@ -1,0 +1,13 @@
+services:
+  pai-1-api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - huggingface-cache:/cache/huggingface
+      - ./models:/app/models:ro
+    environment:
+      PAI1_MODEL_PATH: /app/models/pai-1-0.5b
+      PAI1_CORS_ORIGINS: "*"
+volumes:
+  huggingface-cache:

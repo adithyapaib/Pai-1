@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pai-1 / Decision Workbench</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+    :root { --ink:#20251f; --muted:#687067; --paper:#f4f1e9; --panel:#fbfaf5; --line:#d9d7cd; --acid:#d9ed6a; --coral:#e87855; --blue:#376a91; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:var(--paper); font-family:'Space Grotesk', sans-serif; }
+    body:before { content:''; position:fixed; inset:0; pointer-events:none; opacity:.26; background-image:radial-gradient(#8d9685 0.6px, transparent .6px); background-size:17px 17px; mask-image:linear-gradient(to bottom, #000, transparent 70%); }
+    header { padding:28px 5vw 20px; display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid var(--line); position:relative; }
+    .brand { display:flex; gap:14px; align-items:center; }
+    .mark { width:32px; height:32px; display:grid; place-items:center; background:var(--acid); border:1px solid var(--ink); font-weight:700; transform:rotate(-8deg); }
+    h1 { margin:0; font-size:clamp(1.25rem, 2.4vw, 2rem); letter-spacing:-.04em; }
+    .kicker, .mono { font-family:'DM Mono', monospace; font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; }
+    .kicker { color:var(--muted); margin-top:4px; }
+    .status { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:.82rem; }
+    .dot { width:8px; height:8px; background:#8eaa42; border-radius:50%; box-shadow:0 0 0 4px #dfe8b8; }
+    main { width:min(1400px, 90vw); margin:42px auto 80px; display:grid; grid-template-columns:minmax(0, 1.08fr) minmax(340px, .92fr); gap:clamp(28px, 6vw, 90px); position:relative; }
+    .intro { grid-column:1/-1; max-width:720px; }
+    .eyebrow { color:var(--coral); font-weight:700; font-size:.78rem; letter-spacing:.12em; text-transform:uppercase; }
+    .intro h2 { font-size:clamp(2.4rem, 6vw, 5.8rem); line-height:.91; letter-spacing:-.075em; margin:12px 0 18px; max-width:800px; }
+    .intro p { margin:0; color:var(--muted); max-width:570px; line-height:1.55; }
+    section { background:var(--panel); border:1px solid var(--line); padding:24px; box-shadow:7px 7px 0 #e3e0d5; }
+    .section-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; border-bottom:1px solid var(--line); padding-bottom:15px; margin-bottom:20px; }
+    h3 { margin:0; font-size:1.05rem; letter-spacing:-.02em; }
+    label { display:block; font-size:.77rem; font-weight:600; margin:0 0 7px; }
+    textarea, input, select { width:100%; border:1px solid #c8cbc0; background:#fffef9; color:var(--ink); padding:11px 12px; font:inherit; font-size:.9rem; outline:none; border-radius:0; }
+    textarea:focus, input:focus, select:focus { border-color:var(--blue); box-shadow:3px 3px 0 #c8dce9; }
+    textarea { min-height:100px; resize:vertical; line-height:1.45; }
+    .field { margin-bottom:18px; }
+    .question { border-top:1px solid var(--line); padding:18px 0 4px; position:relative; }
+    .question:first-of-type { border-top:0; padding-top:0; }
+    .question-title { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+    .question-title strong { font-size:.9rem; }
+    .q-number { color:var(--coral); font-family:'DM Mono',monospace; margin-right:7px; }
+    .grid { display:grid; grid-template-columns:1fr 150px; gap:12px; }
+    .criteria { margin-top:13px; display:grid; gap:8px; }
+    .criterion { display:grid; grid-template-columns:1fr 1.5fr 30px; gap:7px; align-items:center; }
+    .criterion.score { grid-template-columns:1fr 30px; }
+    button { border:1px solid var(--ink); border-radius:0; padding:11px 15px; font:600 .83rem 'Space Grotesk', sans-serif; cursor:pointer; transition:transform .16s ease, box-shadow .16s ease; }
+    button:hover { transform:translate(-2px,-2px); box-shadow:3px 3px 0 var(--ink); }
+    .primary { background:var(--ink); color:var(--paper); width:100%; margin-top:22px; }
+    .secondary { background:var(--acid); }
+    .ghost { border:0; background:transparent; padding:3px 4px; color:var(--muted); font-size:.75rem; }
+    .ghost:hover { box-shadow:none; color:var(--coral); transform:none; }
+    .add { background:transparent; width:100%; margin-top:12px; border-style:dashed; }
+    .remove { border:0; background:transparent; padding:4px; color:var(--coral); font-size:1.1rem; }
+    .results { min-height:420px; display:flex; flex-direction:column; }
+    .empty { flex:1; display:grid; place-items:center; text-align:center; color:var(--muted); padding:50px 20px; border:1px dashed var(--line); }
+    .empty b { display:block; color:var(--ink); margin-bottom:6px; }
+    .result-list { display:grid; gap:12px; }
+    .result { border-left:4px solid var(--acid); background:#f2f3e9; padding:15px; animation:rise .4s ease both; }
+    .result-top { display:flex; justify-content:space-between; gap:12px; align-items:center; }
+    .result-id { font-weight:700; }
+    .answer { color:var(--blue); font-weight:700; text-transform:capitalize; }
+    .confidence { font-family:'DM Mono',monospace; font-size:.76rem; color:var(--muted); margin-top:8px; }
+    .bar { height:5px; background:#dfe2d4; margin-top:10px; overflow:hidden; }
+    .bar i { display:block; height:100%; background:var(--coral); }
+    pre { white-space:pre-wrap; word-break:break-word; background:#20251f; color:#d9ed6a; padding:15px; font: .72rem/1.5 'DM Mono',monospace; max-height:260px; overflow:auto; margin:18px 0 0; }
+    .error { color:#a43f2c; background:#f8ded4; border:1px solid #e5a28d; padding:12px; font-size:.82rem; margin-bottom:14px; }
+    @keyframes rise { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+    @media (max-width:850px) { header { padding:22px 5vw; } .status { display:none; } main { width:min(94vw, 650px); grid-template-columns:1fr; margin-top:30px; } .intro h2 { font-size:clamp(2.8rem, 14vw, 5rem); } section { box-shadow:4px 4px 0 #e3e0d5; padding:18px; } }
+    @media (prefers-reduced-motion:reduce) { *, *:before, *:after { animation:none !important; transition:none !important; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand"><div class="mark">P</div><div><h1>Pai-1</h1><div class="kicker">Decision workbench / local inference</div></div></div>
+    <div class="status"><i class="dot"></i><span id="statusText">checking model...</span></div>
+  </header>
+  <main>
+    <div class="intro"><div class="eyebrow">Manual test console</div><h2>Ask the model<br>to make a call.</h2><p>Build a shared situation, add one or more typed questions, and inspect the model's answer without leaving the browser.</p></div>
+    <section>
+      <div class="section-head"><h3>Request composer</h3><span class="mono">POST /v1/evaluate</span></div>
+      <div class="field"><label for="state">Shared state</label><textarea id="state">Checkout has been failing for every customer for the last hour.</textarea></div>
+      <div id="questions"></div>
+      <button class="add" id="addQuestion">+ Add another question</button>
+      <button class="primary" id="run">Run evaluation <span aria-hidden="true">→</span></button>
+    </section>
+    <section class="results"><div class="section-head"><h3>Model response</h3><span class="mono" id="latency">—</span></div><div id="error"></div><div id="resultList" class="empty"><div><b>Nothing evaluated yet.</b>Run a request to see the decision set.</div></div><pre id="raw" hidden></pre></section>
+  </main>
+  <script>
+    const questions = document.querySelector('#questions');
+    const esc = value => String(value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+    const defaults = [
+      { id:'is_urgent', type:'noul', instructions:'The message conveys urgency or time-sensitivity' },
+      { id:'team', type:'choice', instructions:'Which team should handle this request?', criteria:[['billing','Payments, invoices, and refunds'],['technical','Outages, errors, and configuration'],['sales','Plans and upgrades']] },
+      { id:'severity', type:'score', instructions:'How severe is the customer impact?', criteria:[['No impact',''],['Minor',''],['Major',''],['Critical','']] }
+    ];
+    function renderQuestion(data = {}) {
+      const node = document.createElement('div'); node.className='question';
+      node.innerHTML = `<div class="question-title"><strong><span class="q-number">Q</span><span class="question-id">${esc(data.id || 'new_question')}</span></strong><button class="remove" title="Remove question">×</button></div><div class="grid"><div><label>Question ID</label><input class="qid" value="${esc(data.id || '')}" placeholder="e.g. is_urgent"></div><div><label>Type</label><select class="qtype"><option value="noul">noul / yes-no</option><option value="choice">choice</option><option value="score">score</option></select></div></div><div class="field" style="margin-top:13px"><label>Instructions</label><input class="instructions" value="${esc(data.instructions || '')}" placeholder="What should the model determine?"></div><div class="criteria"></div><button class="ghost addCriterion">+ Add criterion</button>`;
+      node.querySelector('.qtype').value = data.type || 'choice'; node.querySelector('.remove').onclick=()=>node.remove(); node.querySelector('.qid').oninput=e=>node.querySelector('.question-id').textContent=e.target.value || 'new_question';
+      const criteria = node.querySelector('.criteria');
+      function drawCriteria() { const type=node.querySelector('.qtype').value; criteria.innerHTML=''; node.querySelector('.addCriterion').hidden=type==='noul'; (data.criteria || (type==='choice' ? [['option','Description']] : [['No impact',''],['Minor',''],['Major',''],['Critical','']])).forEach(pair=>addCriterion(pair, type)); }
+      function addCriterion(pair=['',''], type=node.querySelector('.qtype').value) { const row=document.createElement('div'); row.className='criterion '+(type==='score'?'score':''); row.innerHTML=type==='score'?`<input class="label" value="${esc(pair[0])}" placeholder="Scale label"><button class="remove">×</button>`:`<input class="label" value="${esc(pair[0])}" placeholder="Key"><input class="description" value="${esc(pair[1])}" placeholder="Meaning or description"><button class="remove">×</button>`; row.querySelector('.remove').onclick=()=>row.remove(); criteria.append(row); }
+      node.querySelector('.qtype').onchange=()=>{ data.criteria=null; drawCriteria(); }; node.querySelector('.addCriterion').onclick=()=>addCriterion(); drawCriteria(); questions.append(node);
+    }
+    defaults.forEach(renderQuestion);
+    document.querySelector('#addQuestion').onclick=()=>renderQuestion({type:'choice'});
+    function buildPayload() { const result={model:'clef', state:document.querySelector('#state').value.trim(), questions:{}}; document.querySelectorAll('.question').forEach(node=>{ const type=node.querySelector('.qtype').value, criteria={}; const rows=[...node.querySelectorAll('.criterion')]; const list=rows.map(row=>row.querySelector('.label').value.trim()); rows.forEach((row,i)=>criteria[list[i]]=row.querySelector('.description')?.value.trim() || list[i]); result.questions[node.querySelector('.qid').value.trim() || `question_${Object.keys(result.questions).length+1}`]={type,instructions:node.querySelector('.instructions').value.trim(),criteria:type==='noul'?undefined:(type==='score'?list:criteria)}; }); return result; }
+    function showResults(data) { const list=document.querySelector('#resultList'); list.className='result-list'; list.innerHTML=Object.entries(data.results).map(([id,item],i)=>{ const pct=(item.confidence*100).toFixed(1); return `<div class="result" style="animation-delay:${i*70}ms"><div class="result-top"><span class="result-id">${esc(id)}</span><span class="answer">${esc(item.choice)}</span></div><div class="confidence">${esc(item.type)} · ${pct}% confidence</div><div class="bar"><i style="width:${Math.max(1, item.confidence*100)}%"></i></div></div>`; }).join(''); document.querySelector('#raw').hidden=false; document.querySelector('#raw').textContent=JSON.stringify(data,null,2); document.querySelector('#latency').textContent=`${data.inference_ms} ms`; }
+    document.querySelector('#run').onclick=async()=>{ const error=document.querySelector('#error'); error.innerHTML=''; const button=document.querySelector('#run'); button.disabled=true; button.textContent='Evaluating...'; try { const response=await fetch('/v1/evaluate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildPayload())}); const data=await response.json(); if(!response.ok) throw new Error(data.detail || data.error || `HTTP ${response.status}`); showResults(data); } catch(err) { error.innerHTML=`<div class="error">${esc(err.message)}. Check that the API is running and the request is valid.</div>`; } finally { button.disabled=false; button.innerHTML='Run evaluation <span aria-hidden="true">→</span>'; } };
+    fetch('/health').then(r=>r.json()).then(data=>{ document.querySelector('#statusText').textContent=data.model_loaded?`model ready · ${data.device}`:'model unavailable'; }).catch(()=>document.querySelector('#statusText').textContent='API unavailable');
+  </script>
+</body>
+</html>

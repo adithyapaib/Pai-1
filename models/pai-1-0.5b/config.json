@@ -1,0 +1,9 @@
+{
+  "backbone": "Qwen/Qwen2.5-0.5B-Instruct",
+  "hidden_size": 896,
+  "decision_size": 256,
+  "num_heads": 4,
+  "max_length": 256,
+  "architecture": "Qwen2.5-0.5B-Instruct + MiniClefHead",
+  "decision_head_parameters": 1414657
+}
