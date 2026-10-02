@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import Settings
 from .model import Pai1
 from .schemas import DecideRequest, DecideResponse, ErrorResponse, EvaluateRequest, EvaluateResponse, QuestionResult
+from .systemone import ClassifierResponse, SystemOneRequest, Usage, classify_questions, new_request_id, REQUEST_ID_HEADER
 
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
@@ -61,6 +62,35 @@ async def decide(payload: DecideRequest, request: Request) -> DecideResponse:
     result["model"] = model.model_name
     result["inference_ms"] = round((time.perf_counter() - started) * 1000, 2)
     return DecideResponse(**result)
+
+
+@app.post(
+    "/v1/systemone",
+    responses={422: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    summary="TypeSafe-compatible classification (LangChain)",
+)
+async def systemone(payload: SystemOneRequest, request: Request) -> JSONResponse:
+    """Classify state with Noul/Choice/Score questions (TypeSafe wire protocol).
+
+    Compatible with ``langchain-typesafe`` ``TypeSafeClassifier`` and the
+    experimental ``ModelRouterMiddleware`` / ``AutoModeMiddleware``. Point them
+    at this server with ``TYPESAFE_BASE_URL=http://127.0.0.1:8000``. Any
+    ``Authorization`` bearer value is accepted; auth is not enforced locally.
+    """
+    from fastapi.responses import JSONResponse as _JSONResponse
+
+    model: Pai1 = request.app.state.model
+    request_id = new_request_id()
+    answers, input_tokens = classify_questions(model, payload)
+    body = {
+        "model": model.model_name,
+        "answers": answers,
+        "usage": {"input_tokens": input_tokens, "output_tokens": 0 if input_tokens is not None else None},
+        "request_id": request_id,
+    }
+    # Validate shape before sending so malformed answers become 500, not junk.
+    ClassifierResponse.model_validate(body)
+    return _JSONResponse(content=body, headers={REQUEST_ID_HEADER: request_id})
 
 
 @app.post("/v1/evaluate", response_model=EvaluateResponse, responses={422: {"model": ErrorResponse}, 500: {"model": ErrorResponse}}, summary="Evaluate multiple typed questions")
