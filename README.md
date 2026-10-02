@@ -22,6 +22,11 @@ curl.exe -X POST http://localhost:8000/v1/decide `
 ## Table of contents
 
 - [How it works](#how-it-works)
+  - [The two halves](#the-two-halves)
+  - [Startup](#startup-what-happens-on-boot)
+  - [A request, step by step](#a-request-step-by-step-pai1predict-appmodelpy116)
+  - [How each endpoint reuses `predict`](#how-each-endpoint-reuses-predict)
+  - [Failure modes](#failure-modes-by-design)
 - [Quickstart](#quickstart)
 - [Makefile](#makefile)
 - [API reference](#api-reference)
@@ -37,7 +42,7 @@ curl.exe -X POST http://localhost:8000/v1/decide `
 
 ## How it works
 
-Pai-1 is a **classifier, not a chatbot**. One request in, one ranked decision out:
+Pai-1 is a **classifier, not a chatbot**. There is no text generation, no chat loop, no streaming — one request in, one ranked decision out:
 
 ```text
                  Qwen2.5-0.5B-Instruct  (frozen, understands text)
@@ -58,15 +63,71 @@ Pai-1 is a **classifier, not a chatbot**. One request in, one ranked decision ou
                  decision + confidence
 ```
 
-Per request (`app/model.py:116`):
+### The two halves
 
-1. Build one text block: `STATE: …`, `QUESTION: …`, `OPTION_1: …`, `OPTION_2: …`.
-2. Backbone encodes it into hidden states.
-3. Mean-pool the token spans for each section (via tokenizer offsets).
-4. `MiniPaiHead` — `896→256` projections, 4-head attention, residual FFN, `768→256→1` scorer — emits one logit per option.
-5. Softmax → probabilities sorted highest-first. `choice` is the winner, `confidence` its probability.
+Understanding and judging are deliberately split between two components (`app/model.py`):
 
-The head object is built **once** at startup (`lifespan`, `app/main.py:23`) and shared across requests. Loading uses `strict=True`, so a mismatched checkpoint fails fast instead of mis-scoring silently. CPU runs FP32; CUDA runs the backbone in FP16 with FP32 head inputs.
+| | Backbone | Decision head |
+|---|---|---|
+| Class | `Qwen2.5-0.5B-Instruct` (Hugging Face) | `MiniPaiHead` (`app/model.py:20`) |
+| Parameters | ~0.5B, **frozen, never fine-tuned** | **1,414,657, trained** — the only learned part |
+| Role | turns text into rich hidden states | turns hidden states into one score per option |
+| Precision | FP16 on CUDA, FP32 on CPU | always FP32 inputs |
+| Source | downloaded from HF on first boot, cached | `decision_head.pt` (Git LFS) |
+
+The head architecture, in order: three `896→256` linear projections (state, question, options) → `LayerNorm` → 4-head self-attention over the sequence `[state, question, option₁…optionₙ]` with a residual add → residual feed-forward block (`LayerNorm → 256→512 → GELU → 512→256`) → per-option scorer that concatenates each option vector with the attended state and question context (`256×3=768 → 256 → GELU → 1`). Output: exactly one logit per option.
+
+Because only the head is trained, swapping in a better checkpoint is a single-file change — the backbone, tokenizer, and API stay untouched.
+
+### Startup: what happens on boot
+
+The model is built **once** in the FastAPI `lifespan` handler (`app/main.py:23`) and shared by every request via `app.state.model`:
+
+1. **Settings** — `Settings.from_environment()` reads `PAI1_*` env vars (legacy `PAICLEF_*` accepted when the new name is unset).
+2. **Device** — `auto` picks CUDA when available, else CPU; requesting `cuda` on a CUDA-less box raises immediately (`app/model.py:99`).
+3. **Config** — `config.json` supplies `hidden_size` (896), `decision_size` (256), `num_heads` (4); the model name is the export folder name (`pai-1-0.5b`).
+4. **Tokenizer** — loaded from the local `tokenizer/` dir, including a compatibility shim that repairs older exports whose `extra_special_tokens` is a list instead of a mapping (`app/model.py:82`).
+5. **Backbone** — `AutoModel.from_pretrained(...)` (first boot downloads it once, then it is cached), moved to the device, set to `.eval()`.
+6. **Head** — `MiniPaiHead` is constructed, then `decision_head.pt` is loaded with `torch.load(..., weights_only=True)`. The loader accepts a bare state dict or a `{"state_dict": …}` / `{"model_state_dict": …}` wrapper, and applies it with **`strict=True` — a mismatched checkpoint crashes at startup instead of mis-scoring silently** (`app/model.py:72`).
+7. The head moves to the device in FP32, eval mode, and its parameter count is logged.
+
+If the model object is missing, `/health` reports `degraded` instead of `ok` — the server never pretends to work.
+
+### A request, step by step (`Pai1.predict`, `app/model.py:116`)
+
+Every endpoint funnels into the same `predict(state, question, options)` routine:
+
+1. **Prompt assembly** — one text block is built, options numbered in insertion order:
+   `STATE: …` ⏎ `QUESTION: …` ⏎ `OPTION_1: …` ⏎ `OPTION_2: …`.
+   Note the model only ever sees the option **descriptions**; the **labels** (keys) are kept aside and re-attached to the scores afterwards.
+2. **Tokenization** — truncated at `PAI1_MAX_LENGTH` (default 2048), requesting `return_offsets_mapping` so every token knows the exact character span it came from.
+3. **Encoding** — a single backbone forward pass under `torch.inference_mode()` (no gradients, no dropout); only `last_hidden_state[0]` is kept, cast to float.
+4. **Span pooling** — `_pool_span` (`app/model.py:107`) locates each section (`STATE: `, `QUESTION: `, `OPTION_i: `) by its character offsets, selects every token overlapping that span, and **mean-pools** them. Result: one 896-dim vector for the state, one for the question, and an `N×896` matrix for the options. A section that maps to zero tokens raises instead of returning a garbage zero-vector.
+5. **Scoring** — the head runs its projections → attention (with a padding mask slot, all-true for real requests) → scorer, producing one logit per option.
+6. **Decision** — softmax over the logits → probabilities, sorted highest-first. `choice` is the winning **label**, `confidence` is its probability, `probabilities` maps every label to its score (sums to 1).
+
+Typical latency is tens of milliseconds on CPU — the backbone forward pass dominates; the 1.4M-param head is negligible.
+
+### How each endpoint reuses `predict`
+
+- **`/v1/decide`** (`app/main.py:57`) — thin wrapper: validates (2–20 options, non-blank everything, labels unique after stripping), calls `predict` once, stamps `model` + `inference_ms`.
+- **`/v1/evaluate`** (`app/main.py:96`) — loops over typed questions sharing one state, translating each type into an options dict:
+  - `noul` / `bool` / `boolean` → fixed `{"yes": "The answer to this question is yes.", "no": …}` options; `choice` is `yes` or `no`.
+  - `choice` → the `criteria` object *is* the options dict; `choice` is the winning key.
+  - `score` → the `criteria` list becomes `{"0": level₀, "1": level₁, …}`; after scoring, the winning index is mapped back to its **label** and probabilities are re-keyed by label.
+- **`/v1/systemone`** (`app/main.py:67` + `app/systemone.py:137`) — same engine, JSON-tolerant protocol layer for LangChain:
+  - `to_text` / `state_to_text` (`app/systemone.py:27`) accept **any JSON** as state, instructions, or criteria — objects and arrays are deterministically stringified (`sort_keys=True`) for the backbone.
+  - `noul` honors custom `criteria.true` / `criteria.false` texts (falling back to *"The answer to this question is …"*), returning `noul = P(yes)`.
+  - `choice` passes criteria values through as option descriptions.
+  - `score` returns the **expected value** `Σ level × P(level)` plus a `legend` mapping levels back to rubric labels; confidence is the peak rubric probability.
+  - `usage.input_tokens` is a best-effort count from the local tokenizer (`output_tokens` is 0 — classifiers generate nothing); a fresh `request_id` is returned in both the body and the `x-typesafe-request-id` header; the response is validated against `ClassifierResponse` **before** sending, so a malformed answer becomes a 500 instead of junk on the wire. Any bearer token is accepted — auth is not enforced locally.
+
+### Failure modes (by design)
+
+- **Bad input → `422`** with a message naming the offending field/question (Pydantic + custom validators), never a traceback.
+- **Anything unexpected → generic `500 {"error": "Model inference failed"}`**; the real traceback goes to the server log only (`app/main.py:34`).
+- **Bad checkpoint / missing CUDA / missing span → fail fast** at startup or request time, never a silent wrong answer.
+- **What it can't do:** verify facts, enforce safety, or explain itself — confidence is a probability over *your* options, not a guarantee. Gate high-stakes actions on thresholds.
 
 ---
 
